@@ -94,7 +94,7 @@ end
 mdl2 = 'squawk4_pitchhold';
 build_pitchhold(mdl2, root);
 
-Klist = [0 0.03 0.2 1.0];   % 0.03 = design gain (see section 6)
+Klist = [0 0.03 0.2 0.5];   % 0.03 = design gain (see section 6)
 f2 = figure('Name', 'Pitch attitude hold', 'Position', [100 60 900 850]);
 tl2 = tiledlayout(f2, 5, 1, 'TileSpacing', 'compact');
 ax = gobjects(5,1); for k = 1:5, ax(k) = nexttile(tl2); hold on; grid on; end
@@ -121,7 +121,7 @@ title(tl2, 'Pitch attitude hold: \delta_e = \delta_{e,pilot} + K_\theta \Delta\t
 exportgraphics(f2, fullfile(outdir, 'squawk4_pitchhold_response.png'), 'Resolution', 150);
 
 %% 5) K_theta sweep: damping ratios
-Ksweep = unique([linspace(0, 0.2, 2001), linspace(0.2, 2, 901)]);   % fine near 0
+Ksweep = linspace(0, 0.5, 2501);   % K_theta = 0 to 0.5, step 2e-4
 zph = nan(size(Ksweep)); zsp = zph; wph = zph; wsp = zph;
 P = nan(4, numel(Ksweep));
 for i = 1:numel(Ksweep)
@@ -163,8 +163,14 @@ L1      = Ksweep(lvl == 1);
 K_design = round(mean([min(L1) max(L1)]) / 0.005) * 0.005;   % middle of the Level 1 window
 [~, jD]  = min(abs(Ksweep - K_design));
 fprintf('Level 1 window (all longitudinal reqs): %.4f < K_theta <= %.4f\n', min(L1), max(L1));
-fprintf('Short period drops to Level 2 at K_theta = %.4f, to Level 3 at %.4f\n', ...
-    Ksweep(find(lvl_spz >= 2, 1)), Ksweep(find(lvl_spz >= 3, 1)));
+for L = 2:3
+    iL = find(lvl_spz >= L, 1);
+    if isempty(iL)
+        fprintf('Short period stays better than Level %d over K_theta = 0 to %.2f\n', L, Ksweep(end));
+    else
+        fprintf('Short period drops to Level %d at K_theta = %.4f\n', L, Ksweep(iL));
+    end
+end
 lvlName = {'Level 1', 'Level 2', 'Level 3', 'worse than Level 3'};
 for jj = [1 jD]
     fprintf(['  K_theta = %.3f: phugoid zeta = %.4f (%s) | SP zeta = %.3f (%s) | ' ...
@@ -183,7 +189,7 @@ for tile = 1:2
     yline(ax3, 0.04, '-.', 'phugoid L1: \zeta \geq 0.04', 'HandleVisibility', 'off');
     yline(ax3, 0.30, '-.', 'SP L1: \zeta \geq 0.30', 'HandleVisibility', 'off');
     yline(ax3, 0.20, '-.', 'SP L2: \zeta \geq 0.20', 'HandleVisibility', 'off');
-    yline(ax3, 1, ':', '\zeta = 1', 'HandleVisibility', 'off', 'LabelHorizontalAlignment', 'left');
+    yline(ax3, 1, ':', '\zeta = 1', 'HandleVisibility', 'off', 'LabelHorizontalAlignment', 'right');
     xline(ax3, K_design, '-', ['design K_\theta = ' num2str(K_design, '%.3f')], ...
         'HandleVisibility', 'off', 'LabelVerticalAlignment', 'top');
     plot(ax3, 0, zph(1), 'ko', 'MarkerFaceColor', 'k', 'HandleVisibility', 'off');
@@ -192,8 +198,8 @@ for tile = 1:2
     if tile == 1
         xline(ax3, Kcrit, '--', ['phugoid critically damped, K_\theta = ' num2str(Kcrit, '%.3f')], ...
             'HandleVisibility', 'off', 'LabelVerticalAlignment', 'middle');
-        xlim(ax3, [0 2]); ylim(ax3, [0 3]); title(ax3, 'Full sweep (\zeta > 1: two real roots)');
-        legend(ax3, 'Location', 'east');
+        xlim(ax3, [0 0.5]); ylim(ax3, [0 1.6]); title(ax3, 'Full sweep (\zeta > 1: two real roots)');
+        legend(ax3, 'Location', 'southoutside', 'Orientation', 'horizontal');
     else
         xlim(ax3, [0 0.15]); ylim(ax3, [0 0.8]); title(ax3, 'Zoom: Level 1 window');
     end
@@ -205,14 +211,14 @@ f4 = figure('Name', 'Root locus vs K_theta', 'Position', [140 140 900 520]);
 plot(real(P.'), imag(P.'), '.', 'MarkerSize', 4); hold on; grid on;
 plot(real(P(:,1)), imag(P(:,1)), 'kx', 'MarkerSize', 10, 'LineWidth', 1.5);
 xlabel('Real (1/s)'); ylabel('Imag (rad/s)');
-title('Closed-loop poles, K_\theta = 0 \rightarrow 2 (x = open loop)');
+title('Closed-loop poles, K_\theta = 0 \rightarrow 0.5 (x = open loop)');
 exportgraphics(f4, fullfile(outdir, 'squawk4_rootlocus_Ktheta.png'), 'Resolution', 150);
 
 T = table(Ksweep(:), zph(:), wph(:), zsp(:), wsp(:), ...
     'VariableNames', {'K_theta', 'zeta_phugoid', 'wn_phugoid', 'zeta_sp', 'wn_sp'});
 writetable(T, fullfile(outdir, 'squawk4_Ktheta_sweep.csv'));
 fprintf('Phugoid becomes critically damped at K_theta = %.4f\n', Kcrit);
-for Kp = [0 0.05 0.1 0.2 0.5 1 2]
+for Kp = [0 0.05 0.1 0.2 0.3 0.4 0.5]
     [~, j] = min(abs(Ksweep - Kp));
     fprintf('  K_theta = %4.2f: zeta_ph = %6.3f (wn %.4f) | zeta_sp = %.3f (wn %.3f)\n', ...
         Ksweep(j), zph(j), wph(j), zsp(j), wsp(j));
